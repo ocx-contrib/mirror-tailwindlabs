@@ -43,11 +43,11 @@ assets:
     - "^tailwindcss-linux-arm64$"
   "linux/arm64+libc.musl":
     - "^tailwindcss-linux-arm64-musl$"
-  # ── Pass 2 (darwin) — uncomment together with the base's platform keys ─────
-  # darwin/amd64:
-  #   - "^tailwindcss-macos-x64$"
-  # darwin/arm64:
-  #   - "^tailwindcss-macos-arm64$"
+  # ── Pass 2 (darwin) — uncommented together with the base's platform keys ───
+  darwin/amd64:
+    - "^tailwindcss-macos-x64$"
+  darwin/arm64:
+    - "^tailwindcss-macos-arm64$"
   # ── Pass 3 (windows) ──────────────────────────────────────────────────────
   # windows/amd64:
   #   - "^tailwindcss-windows-x64\\.exe$"
