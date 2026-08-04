@@ -1,0 +1,142 @@
+# Shared base for every spec in this repository (Tailwind Labs tooling).
+#
+# NOT a spec: it has no name/target/source and is never loaded on its own.
+# Everything a package owns — name, target, source, assets, asset_type,
+# bin_scan, metadata, catalog, tests, versions, announce, annotations — stays
+# in that package's own mirror.yml.
+#
+# ⚠️ `extends:` is a SHALLOW merge of top-level keys. A spec that sets a key
+# below replaces that block OUTRIGHT — there is no per-key merge. `platforms:`
+# is where this bites: it carries BOTH the runner matrix and the container
+# legs, so a child that restates it to tweak one runner silently drops every
+# `containers:` entry. Nothing reds — the legs simply stop existing, and every
+# os.features claim in that spec goes back to being merely asserted. Restate
+# `platforms:` IN FULL or not at all. tailwindcss/mirror.yml deliberately does
+# NOT restate it, which removes that trap structurally.
+
+skip_prereleases: true
+cascade: true
+
+# Upstream versions are bare semver (`4.3.3`) carrying no `+build` segment, so
+# the fleet default applies with no exception. A cascade tag (`latest`, `4`,
+# `4.3`) re-points on every re-publish; without a build segment the new
+# manifest would reuse the bare version tag and orphan the prior digest for
+# registry GC, breaking any `@sha256:` pin in a consumer's ocx.lock.
+build_timestamp: date
+
+verify:
+  github_asset_digest: true
+
+concurrency:
+  # Assets are RAW ~100-110 MB executables (Bun-compiled single-file builds) —
+  # the largest per-asset payload in the fleet. Keep the download fan-out
+  # modest so a full backfill does not saturate the runner's disk or network.
+  max_downloads: 4
+  max_bundles: 2
+  max_pushes: 2
+  rate_limit_ms: 100
+  max_retries: 3
+  compression_threads: 0
+
+# ─── Platform matrix ────────────────────────────────────────────────────────
+#
+# `os.features` states what an artifact REQUIRES OF THE HOST — it is not a
+# label for how it was built. MEASURED on the real assets at BOTH ends of the
+# mirrored range (v4.1.0 and v4.3.3), on both arches:
+#
+#   $ file tailwindcss-linux-x64
+#   ELF 64-bit LSB executable, x86-64, dynamically linked,
+#     interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0
+#   $ readelf -d tailwindcss-linux-x64 | grep NEEDED
+#     libc.so.6  ld-linux-x86-64.so.2  libpthread.so.0  libdl.so.2  libm.so.6
+#   $ readelf -V tailwindcss-linux-x64 | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+#   GLIBC_2.17                       (same on aarch64 — both toolchains agree)
+#
+#   $ file tailwindcss-linux-x64-musl
+#   ELF 64-bit LSB executable, x86-64, dynamically linked,
+#     interpreter /lib/ld-musl-x86_64.so.1
+#   $ readelf -d tailwindcss-linux-x64-musl | grep NEEDED
+#     libstdc++.so.6  libc.musl-x86_64.so.1  libgcc_s.so.1
+#
+# NEITHER build is static. The `-musl` asset is dynamically linked against the
+# musl loader, so `+libc.musl` is the correct and necessary key for it, and the
+# unsuffixed asset genuinely requires glibc. A bare key on either would be a
+# false universality claim. Not UPX-packed: `strings -a | grep -c '^UPX'` = 2
+# (below the >=3 threshold) and `Start of section headers` is non-zero on all
+# four assets, so the readelf reading above is trustworthy.
+#
+# The renderer rejects a `+libc.musl` key tested in a glibc image (exit 65),
+# so each key gets exactly the legs that can falsify it: glibc → ubuntu +
+# fedora (two different glibc vintages), musl → alpine.
+#
+# ─── `containers[].setup:` on the musl legs — measured load-bearing ─────────
+#
+# The musl build additionally needs libstdc++/libgcc_s, which alpine:3.20 does
+# not ship. Measured on the real v4.3.3 asset:
+#
+#   $ docker run --rm -v …:/tw:ro alpine:3.20 /tw -i in.css -o out.css
+#   Error loading shared library libstdc++.so.6: No such file or directory
+#   Error loading shared library libgcc_s.so.1: No such file or directory
+#   Error relocating /tw: __cxa_guard_acquire: symbol not found        → no output
+#
+#   $ docker run … alpine:3.20 sh -c 'apk add --no-cache libstdc++ && /tw …'
+#   ≈ tailwindcss v4.3.3 / Done in 28ms                                → out.css written
+#
+# `libgcc_s` arrives as a dependency of `libstdc++`, so one command per leg is
+# enough. The glibc legs need NOTHING — the same compile ran clean on stock
+# ubuntu:24.04 and fedora:40 with no setup at all, which is why neither carries
+# one. (`os.features` carries libc only; libstdc++ has no declarable home in
+# the spec, so `setup:` fixes the CI leg, not the consumer contract — recorded
+# in tailwindcss/CATALOG.md.)
+platforms:
+  "linux/amd64+libc.glibc":
+    runner: ubuntu-latest
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "fedora:40",    shell: bash }
+  "linux/amd64+libc.musl":
+    runner: ubuntu-latest
+    containers:
+      - { image: "alpine:3.20", shell: sh, setup: ["apk add --no-cache libstdc++"] }
+  "linux/arm64+libc.glibc":
+    # arm64 container legs run natively — no qemu — so the runner arch must
+    # match the platform or the renderer reds the leg up front.
+    runner: ubuntu-24.04-arm
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "fedora:40",    shell: bash }
+  "linux/arm64+libc.musl":
+    runner: ubuntu-24.04-arm
+    containers:
+      - { image: "alpine:3.20", shell: sh, setup: ["apk add --no-cache libstdc++"] }
+  # ── Pass 2 (darwin) ────────────────────────────────────────────────────────
+  # Kept commented in lockstep with the matching `assets:` keys in
+  # tailwindcss/mirror.yml. A declared platform with no resolvable asset does
+  # not red — it boots a real runner and reports SUCCESS having tested nothing
+  # — so the platform key and its asset regex are uncommented in the SAME pass.
+  #
+  # darwin/amd64:
+  #   # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 —
+  #   # GitHub's native macos-13 Intel pool is exhausted and deadlocks push.
+  #   runner: macos-14
+  #   prefix: ["arch", "-x86_64"]
+  # darwin/arm64:
+  #   runner: macos-14
+  #   shell: bash
+  #
+  # ── Pass 3 (windows) ───────────────────────────────────────────────────────
+  # windows/amd64:
+  #   runner: windows-latest
+  #   shell: pwsh
+  #
+  # windows/arm64 is DELIBERATELY ABSENT, not staged: the whole v4 line ships
+  # no `tailwindcss-windows-arm64.exe`. (The parallel v3.4.x line does, but
+  # `versions.min: 4.1.0` excludes it — see tailwindcss/mirror.yml.)
+  #
+  # No `containers:` on darwin or windows — those runners have no Linux
+  # container engine, and the key is rejected at spec load.
+
+notify:
+  discord:
+    webhook_secret: OCX_MIRROR_DISCORD_HOOK
+    user_id: "227748867204972545"  # pinged in-message on failures

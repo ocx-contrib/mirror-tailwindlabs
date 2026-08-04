@@ -1,0 +1,121 @@
+# ⚠ `extends:` is a SHALLOW merge of TOP-LEVEL KEYS. Setting a key here
+# REPLACES the base's block outright. This spec deliberately does NOT restate
+# `platforms:` — the libc-qualified matrix and its measurement transcript live
+# in mirror-base.yml, so the shallow-merge trap is removed structurally.
+extends: ../mirror-base.yml
+
+name: tailwindcss
+# Logical index package `tailwindlabs/tailwindcss` lives at the physical path
+# `ghcr.io/ocx-contrib/tailwindlabs/tailwindcss` — slash segments, never
+# flattened. GHCR needs no repo per path segment; repo linkage comes from the
+# `org.opencontainers.image.source` annotation the pipeline writes.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/tailwindlabs/tailwindcss
+
+source:
+  type: github_release
+  owner: tailwindlabs
+  repo: tailwindcss
+  tag_pattern: "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# ─── Assets: RAW EXECUTABLES, no archive wrapper anywhere in the v4 line ────
+#
+# Every declared platform matches EXACTLY ONE asset on ALL 28 in-range
+# releases (v4.1.0 … v4.3.3), verified both ways per release; the only
+# unmatched asset is the release-wide `sha256sums.txt`.
+#
+# PATTERNS ARE END-ANCHORED FOR A REASON: `^tailwindcss-linux-x64` without the
+# `$` also prefix-matches `tailwindcss-linux-x64-musl`, which would make every
+# linux leg an ambiguous double-match.
+#
+# libc verdict (full transcript above `platforms:` in ../mirror-base.yml):
+# neither Linux build is static — the unsuffixed asset needs
+# /lib64/ld-linux-*.so, the `-musl` asset needs /lib/ld-musl-*.so — so both
+# carry an explicit, non-overlapping `+libc.*` key. That key is also what
+# disambiguates the two assets routed to the same arch.
+assets:
+  "linux/amd64+libc.glibc":
+    - "^tailwindcss-linux-x64$"
+  "linux/amd64+libc.musl":
+    - "^tailwindcss-linux-x64-musl$"
+  "linux/arm64+libc.glibc":
+    - "^tailwindcss-linux-arm64$"
+  "linux/arm64+libc.musl":
+    - "^tailwindcss-linux-arm64-musl$"
+  # ── Pass 2 (darwin) — uncomment together with the base's platform keys ─────
+  # darwin/amd64:
+  #   - "^tailwindcss-macos-x64$"
+  # darwin/arm64:
+  #   - "^tailwindcss-macos-arm64$"
+  # ── Pass 3 (windows) ──────────────────────────────────────────────────────
+  # windows/amd64:
+  #   - "^tailwindcss-windows-x64\\.exe$"
+  #
+  # windows/arm64 is NOT staged: no `tailwindcss-windows-arm64.exe` exists
+  # anywhere in the v4 line. The parallel, still-maintained v3.4.x line ships
+  # one (plus a `linux-armv7` that OCX cannot express at all) and ships NO musl
+  # variants — an incompatible matrix. `versions.min: 4.1.0` keeps it out:
+  # version selection is by PARSED SEMVER, not publish date, so v3.4.19
+  # (published 2025-12-10, i.e. AFTER v4.1.17) can never enter the range.
+  #
+  # `sha256sums.txt` is release-wide noise and matches no pattern here; the
+  # per-asset digest check comes from `verify.github_asset_digest: true` in the
+  # base instead.
+
+asset_type:
+  # Raw uncompressed executable on every platform — there is no .tar.gz/.zip
+  # wrapper to extract. The asset lands in the bundle as `tailwindcss`; the
+  # Windows asset keeps the `.exe` suffix from its own source name
+  # automatically, so no per-platform `name:` override is needed.
+  type: binary
+  name: tailwindcss
+
+# `off`: the bundle content root IS the single executable, so metadata.json's
+# PATH is a bare `${installPath}` and there is no subdirectory for a scan to
+# walk (the `bin_scan` load gate rejects a bare `${installPath}` only when the
+# effective mode scans). `binaries` is hand-declared and trivially complete —
+# one file, same name on every platform. Same shape as
+# mirror-bazelbuild/bazelisk.
+bin_scan: off
+
+metadata:
+  # Resolves against THIS spec's directory, not the repo root.
+  default: metadata.json
+
+catalog:
+  # Also resolves against this spec's directory, so the repo-root logo shared
+  # by every package has to be named explicitly. CATALOG.md is found by the
+  # default probe beside this file.
+  logo: ../logo.svg
+
+versions:
+  # v4.1.0 is the floor the whole current asset matrix holds at: every release
+  # from here to v4.3.3 ships the same 7 raw binaries. It is also what keeps
+  # the incompatible v3.4.x line out (see the assets note above).
+  min: "4.1.0"
+  new_per_run: 5
+  # Poll upstream every 6 hours. Without this the generated workflow only fires
+  # on workflow_dispatch + push and never auto-discovers a release. Minute 2 is
+  # this repo's assigned slot in the fleet-wide stagger.
+  poll_interval: "2 */6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — the opposite of
+  # `metadata.default` and `catalog.*` above.
+  - name: smoke
+    script: tailwindcss/tests/smoke.star
+
+# Extra OCI annotations on every published index. `image.source` and
+# `.revision` are auto-detected from CI; the SPDX id comes from the license
+# gate (GitHub license API: `spdx_id = MIT`, verified against the repo's own
+# LICENSE file — "MIT License / Copyright (c) Tailwind Labs, Inc.").
+annotations:
+  org.opencontainers.image.licenses: "MIT"
+
+# Logical name is spelled out, not derived from target.repository — the two are
+# related by convention only. Needs OCX_ANNOUNCE_TOKEN (ocx-contrib org secret)
+# AND a merged claim PR for `p/tailwindlabs/tailwindcss.json` on ocx-sh/index.
+announce:
+  package: tailwindlabs/tailwindcss
+  fork: ocx-contrib/index
