@@ -102,7 +102,7 @@ versions:
   # Poll upstream every 6 hours. Without this the generated workflow only fires
   # on workflow_dispatch + push and never auto-discovers a release. Minute 2 is
   # this repo's assigned slot in the fleet-wide stagger.
-  poll_interval: "2 */6 * * *"
+  poll_interval: "41 5-23/6 * * *"
 
 tests:
   # `script:` resolves from the REPOSITORY ROOT — the opposite of
