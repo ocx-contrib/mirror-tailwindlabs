@@ -49,8 +49,12 @@ assets:
   darwin/arm64:
     - "^tailwindcss-macos-arm64$"
   # ── Pass 3 (windows) ──────────────────────────────────────────────────────
-  # windows/amd64:
-  #   - "^tailwindcss-windows-x64\\.exe$"
+  # Layout proven with NO runner before enabling: a throwaway windows-only
+  # probe spec + `pipeline prepare` produced a bundle containing exactly
+  # `tailwindcss.exe` at 0755 — `asset_type: binary` + `name: tailwindcss`
+  # preserves the upstream `.exe`, so no per-platform `name:` override.
+  windows/amd64:
+    - "^tailwindcss-windows-x64\\.exe$"
   #
   # windows/arm64 is NOT staged: no `tailwindcss-windows-arm64.exe` exists
   # anywhere in the v4 line. The parallel, still-maintained v3.4.x line ships

@@ -145,9 +145,9 @@ platforms:
     shell: bash
   #
   # ── Pass 3 (windows) ───────────────────────────────────────────────────────
-  # windows/amd64:
-  #   runner: windows-latest
-  #   shell: pwsh
+  windows/amd64:
+    runner: windows-latest
+    shell: pwsh
   #
   # windows/arm64 is DELIBERATELY ABSENT, not staged: the whole v4 line ships
   # no `tailwindcss-windows-arm64.exe`. (The parallel v3.4.x line does, but
