@@ -115,10 +115,31 @@ platforms:
   # not red — it boots a real runner and reports SUCCESS having tested nothing
   # — so the platform key and its asset regex are uncommented in the SAME pass.
   darwin/amd64:
-    # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 —
-    # GitHub's native macos-13 Intel pool is exhausted and deadlocks push.
-    runner: macos-14
-    prefix: ["arch", "-x86_64"]
+    # NOT macos-14: this asset CANNOT run under Rosetta 2, measured.
+    #
+    #   test (darwin/amd64, …, macos-14): expected exit_code 0, got 132
+    #   (SIGILL), stderr empty
+    #   https://github.com/ocx-contrib/mirror-tailwindlabs/actions/runs/30889250371
+    #
+    # Root cause: the standalone CLI is a Bun-compiled build whose x64 baseline
+    # includes AVX2, which Rosetta 2 does not implement. Confirmed by
+    # disassembling the sibling linux-x64 asset (same Bun x64 build config):
+    #
+    #   $ objdump -d tailwindcss-linux-x64 | grep -coE 'vpbroadcastd|vpermd|vinserti128'
+    #   341 / 10 / 75          (all AVX2-only encodings)
+    #
+    # Upstream ships no `-baseline` variant, so NO Apple Silicon runner can
+    # ever execute it. The only honest leg is a native x86_64 macOS runner.
+    # `macos-13` is the retired, exhausted pool the fleet rule bans (a queued
+    # leg never schedules and deadlocks `push`); `macos-15-intel` is its
+    # supported replacement, available until Aug 2027.
+    #
+    # (`prefix: ["arch", "-x86_64"]` was tried first and is a NO-OP: the spec
+    # loader accepts it but ocx-mirror 0.5.2's renderer emits it nowhere —
+    # 0 occurrences in the generated workflow, same on shipped mirror-gitleaks.
+    # It would not have helped here regardless; Rosetta is the problem, not
+    # how it is entered.)
+    runner: macos-15-intel
   darwin/arm64:
     runner: macos-14
     shell: bash
