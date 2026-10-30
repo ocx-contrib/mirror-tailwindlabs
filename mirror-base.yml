@@ -115,9 +115,9 @@ platforms:
   # not red — it boots a real runner and reports SUCCESS having tested nothing
   # — so the platform key and its asset regex are uncommented in the SAME pass.
   darwin/amd64:
-    # NOT macos-14: this asset CANNOT run under Rosetta 2, measured.
+    # NOT macos-15: this asset CANNOT run under Rosetta 2, measured.
     #
-    #   test (darwin/amd64, …, macos-14): expected exit_code 0, got 132
+    #   test (darwin/amd64, …, macos-15): expected exit_code 0, got 132
     #   (SIGILL), stderr empty
     #   https://github.com/ocx-contrib/mirror-tailwindlabs/actions/runs/30889250371
     #
@@ -141,7 +141,7 @@ platforms:
     # how it is entered.)
     runner: macos-15-intel
   darwin/arm64:
-    runner: macos-14
+    runner: macos-15
     shell: bash
   #
   # ── Pass 3 (windows) ───────────────────────────────────────────────────────

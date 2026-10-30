@@ -150,7 +150,7 @@ jobs:
                 script: tailwindcss/tests/smoke.star
           - platform: darwin/arm64
             platform_slug: darwin_arm64
-            runner: macos-14
+            runner: macos-15
             container_id: _native_
             shell: bash
             tests:
